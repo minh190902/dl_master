@@ -1,0 +1,10 @@
+# Python 3.11 (conda env). Bản TensorFlow này yêu cầu numpy < 2.0
+tensorflow==2.16.1
+numpy<2.0
+scikit-learn>=1.3
+pandas
+matplotlib
+seaborn
+gdown            # tải dataset UIT-VSFC từ Google Drive
+ipykernel        # chạy notebook
+jupyter

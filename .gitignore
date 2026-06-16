@@ -1,0 +1,55 @@
+# ===== Dữ liệu (notebook tự tải lại được, không cần version) =====
+data/
+*.npy
+*.zip
+
+# PhoW2V gốc nếu tải về (rất nặng)
+phow2v/
+word2vec_vi_*.txt
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual env
+venv/
+.venv/
+env/
+ENV/
+.conda/
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+profile_default/
+ipython_config.py
+
+# ===== Công cụ / IDE =====
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Mô hình / output huấn luyện =====
+*.h5
+*.keras
+*.weights.h5
+checkpoints/
+logs/
+runs/
+wandb/
+
+# ===== Tạm =====
+*.log
+*.tmp
+.cache/
