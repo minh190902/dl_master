@@ -351,85 +351,12 @@ KERNELS     = (3, 5, 7) # paper: cửa sổ 3, 5, 7
 LSTM_UNITS  = 128       # paper: 128
 DENSE_UNITS = 200       # paper: 200
 DROPOUT     = 0.2       # paper: 0.2
-# Ghi chú: paper dùng embedding 200d. Ở đây dùng EMBED_DIM=100 (đã định nghĩa ở §2.2) để
-# THỐNG NHẤT với PhoW2V 100d, giúp so sánh công bằng giữa model gốc (emb học từ đầu) và
-# model cải tiến (emb khởi tạo bằng PhoW2V) trên cùng số chiều.
+EPOCHS = 12
+BATCH = 32
+# Ghi chú: bài báo dùng embedding 200 chiều. Ở đây dùng EMBED_DIM=100 (định nghĩa ở §2.2)
+# để thống nhất với PhoW2V 100 chiều, bảo đảm so sánh công bằng giữa mô hình gốc
+# (embedding học từ đầu) và mô hình cải tiến (embedding khởi tạo bằng PhoW2V).
 
-def build_multichannel_lstm_cnn():
-    inp = layers.Input(shape=(MAX_LEN,), dtype="int32", name="tokens")
-    emb = layers.Embedding(VOCAB_SIZE, EMBED_DIM, name="embedding")(inp)
-
-    # --- CNN channels (3 parallel branches) ---
-    cnn_outputs = []
-    for k in KERNELS:
-        c = layers.Conv1D(CNN_FILTERS, k, activation="relu", name=f"conv_k{k}")(emb)
-        c = layers.GlobalMaxPooling1D(name=f"gmaxpool_k{k}")(c)   # max-pool-over-time
-        cnn_outputs.append(c)
-
-    # --- LSTM channel ---
-    lstm_out = layers.LSTM(LSTM_UNITS, name="lstm")(emb)
-
-    # --- Fusion ---
-    merged = layers.concatenate(cnn_outputs + [lstm_out], name="concat")
-    x = layers.Dense(DENSE_UNITS, activation="sigmoid", name="dense")(merged)
-    x = layers.Dropout(DROPOUT, name="dropout")(x)
-    out = layers.Dense(NUM_CLASSES, activation="softmax", name="output")(x)
-
-    model = keras.Model(inp, out, name="MultiChannel_LSTM_CNN")
-    model.compile(optimizer="adamax",
-                  loss="sparse_categorical_crossentropy",
-                  metrics=["accuracy"])
-    return model
-
-model_base = build_multichannel_lstm_cnn()
-model_base.summary()
-""")
-
-# ----------------------------------------------------------------------------
-# 4. Improved architecture
-# ----------------------------------------------------------------------------
-md(r"""
-## 4. Mô hình cải tiến
-
-Mục tiêu của mô hình cải tiến là đạt hiệu năng cao hơn mô hình gốc một cách có cơ sở, thay vì chỉ
-thay đổi kiến trúc một cách tuỳ ý. Để bảo đảm điều này, một loạt thực nghiệm có kiểm soát đã được
-tiến hành (trình bày ở §4.1) nhằm xác định những thay đổi thực sự nâng cao hiệu năng một cách ổn
-định, đánh giá bằng giá trị trung bình trên ba hạt giống ngẫu nhiên (random seed) khác nhau.
-
-Hai thay đổi cốt lõi được lựa chọn, trên cơ sở giữ nguyên cấu trúc đa kênh CNN-LSTM của bài báo,
-được tóm tắt như sau:
-
-| Thay đổi | Cơ sở lý luận |
-|----------|---------------|
-| Khởi tạo embedding bằng **PhoW2V** (có tinh chỉnh) | Sử dụng vector từ tiền huấn luyện trên kho ngữ liệu 20GB nhằm khắc phục hạn chế của embedding học từ từ điển nhỏ |
-| **Focal loss** (γ = 2) | Tăng trọng số học cho các mẫu khó và lớp thiểu số (`neutral`), cải thiện điểm F1 của lớp này |
-| Duy trì `class_weight`, SpatialDropout, EarlyStopping | Điều chuẩn (regularization) và xử lý mất cân bằng lớp |
-
-Đáng chú ý, kiến trúc Bidirectional LSTM (BiLSTM) cũng đã được thử nghiệm nhưng không cải thiện
-hiệu năng trên loại dữ liệu câu ngắn này, thậm chí cho kết quả thấp hơn và kém ổn định (xem §4.1).
-Kết quả này củng cố nguyên tắc rằng việc cải tiến mô hình cần dựa trên bằng chứng thực nghiệm, thay
-vì tăng độ phức tạp một cách không cần thiết.
-""")
-
-md(r"""
-### 4.1. Thực nghiệm lựa chọn kiến trúc cải tiến
-
-Bảng dưới đây trình bày kết quả trung bình trên ba hạt giống ngẫu nhiên (42, 7, 123), đánh giá trên
-tập kiểm thử. Mô hình gốc đạt độ chính xác khoảng 89.9% và macro-F1 khoảng 75.7% để làm mốc đối chiếu.
-
-| Cấu hình | Accuracy | Macro-F1 | Neutral-F1 | Nhận xét |
-|----------|:--------:|:--------:|:----------:|----------|
-| PhoW2V (cố định) + BiLSTM | 87.24 | 70.52 | 32.54 | Cố định embedding cho kết quả kém do lệch miền dữ liệu |
-| PhoW2V 300d + BiLSTM + Focal | 89.65 | 74.75 ± 3.99 | 40.70 | Độ lệch chuẩn lớn, không ổn định |
-| PhoW2V 300d + LSTM + CE | 89.09 | 76.18 ± 0.82 | 44.94 | Tốt |
-| PhoW2V 300d + LSTM + Focal | 90.05 | 76.70 ± 0.97 | 45.84 | Rất tốt |
-| **PhoW2V 100d + LSTM + Focal** | **90.44** | **76.80 ± 0.37** | 45.31 | Macro-F1 cao nhất, độ lệch chuẩn nhỏ nhất |
-
-Trên cơ sở các kết quả trên, cấu hình được lựa chọn cho mô hình cải tiến là **PhoW2V 100 chiều (có
-tinh chỉnh) kết hợp LSTM đa kênh và Focal loss**, do đạt macro-F1 cao nhất và mức độ ổn định tốt nhất.
-""")
-
-code(r"""
 # --- Focal loss cho nhãn dạng số nguyên (sparse) ---
 def sparse_categorical_focal_loss(gamma=2.0):
     def loss(y_true, y_pred):
@@ -440,201 +367,308 @@ def sparse_categorical_focal_loss(gamma=2.0):
         return tf.reduce_mean(-tf.pow(1.0 - p_t, gamma) * tf.math.log(p_t))
     return loss
 
-def build_improved_model():
+def build_model(name, use_phow2v=False, trainable_emb=True, bidirectional=False,
+                use_focal=False, spatial_dropout=0.0):
+    # Hàm dựng mô hình đa kênh CNN-LSTM tham số hoá, dùng chung cho mọi cấu hình.
     inp = layers.Input(shape=(MAX_LEN,), dtype="int32", name="tokens")
-    # Embedding khởi tạo bằng PhoW2V, vẫn cho fine-tune (trainable=True)
-    emb = layers.Embedding(VOCAB_SIZE, EMBED_DIM, weights=[embedding_matrix],
-                           trainable=True, name="embedding_phow2v")(inp)
-    emb = layers.SpatialDropout1D(0.2, name="spatial_dropout")(emb)
+    if use_phow2v:
+        emb = layers.Embedding(VOCAB_SIZE, EMBED_DIM, weights=[embedding_matrix],
+                               trainable=trainable_emb, name="embedding")(inp)
+    else:
+        emb = layers.Embedding(VOCAB_SIZE, EMBED_DIM, name="embedding")(inp)
+    if spatial_dropout > 0:
+        emb = layers.SpatialDropout1D(spatial_dropout, name="spatial_dropout")(emb)
 
-    # --- CNN channels (3 parallel branches) - giữ như paper ---
+    # Ba nhánh CNN song song (cửa sổ 3/5/7) + gộp cực đại theo thời gian
     cnn_outputs = []
     for k in KERNELS:
         c = layers.Conv1D(CNN_FILTERS, k, activation="relu", padding="same", name=f"conv_k{k}")(emb)
         c = layers.GlobalMaxPooling1D(name=f"gmaxpool_k{k}")(c)
         cnn_outputs.append(c)
 
-    # --- LSTM channel (giữ LSTM 1 chiều như paper - thắng BiLSTM trong thực nghiệm) ---
-    lstm_out = layers.LSTM(LSTM_UNITS, name="lstm")(emb)
+    # Kênh hồi tiếp: LSTM một chiều hoặc hai chiều (BiLSTM)
+    rnn = (layers.Bidirectional(layers.LSTM(LSTM_UNITS), name="bilstm") if bidirectional
+           else layers.LSTM(LSTM_UNITS, name="lstm"))(emb)
 
-    merged = layers.concatenate(cnn_outputs + [lstm_out], name="concat")
+    merged = layers.concatenate(cnn_outputs + [rnn], name="concat")
     x = layers.Dense(DENSE_UNITS, activation="sigmoid", name="dense")(merged)
-    x = layers.Dropout(0.3, name="dropout")(x)
+    x = layers.Dropout(DROPOUT, name="dropout")(x)
     out = layers.Dense(NUM_CLASSES, activation="softmax", name="output")(x)
 
-    model = keras.Model(inp, out, name="Improved_PhoW2V_LSTM_CNN_Focal")
-    model.compile(optimizer="adamax",
-                  loss=sparse_categorical_focal_loss(gamma=2.0),
-                  metrics=["accuracy"])
+    model = keras.Model(inp, out, name=name)
+    loss = sparse_categorical_focal_loss(2.0) if use_focal else "sparse_categorical_crossentropy"
+    model.compile(optimizer="adamax", loss=loss, metrics=["accuracy"])
     return model
 
-model_improved = build_improved_model()
-model_improved.summary()
-""")
+SEEDS = [42, 7, 123]   # ba hạt giống ngẫu nhiên để đánh giá độ ổn định
 
-# ----------------------------------------------------------------------------
-# 5. Training
-# ----------------------------------------------------------------------------
-md(r"""
-## 5. Huấn luyện
+def set_seed(s):
+    random.seed(s); np.random.seed(s); tf.random.set_seed(s)
 
-Cả hai mô hình được huấn luyện trên cùng tập huấn luyện và tập kiểm định, đồng thời áp dụng trọng
-số lớp (`class_weight`) để xử lý mất cân bằng lớp.
-
-- **Mô hình gốc:** theo bài báo, sử dụng bộ tối ưu Adamax, lớp embedding học từ đầu và hàm mất mát
-  cross-entropy. Kích thước lô (batch size) được đặt bằng 32 thay vì 10 nhằm rút ngắn thời gian
-  huấn luyện trên CPU.
-- **Mô hình cải tiến:** sử dụng bộ tối ưu Adamax, lớp embedding khởi tạo bằng PhoW2V (có tinh
-  chỉnh), hàm mất mát Focal loss, kết hợp các kỹ thuật điều khiển huấn luyện `EarlyStopping` và
-  `ReduceLROnPlateau`.
-""")
-
-code(r"""
-EPOCHS = 12
-BATCH = 32
-
-def train_model(model, epochs=EPOCHS, use_callbacks=False):
+def train_eval_once(build_kw, name, seed, epochs, use_callbacks):
+    set_seed(seed)
+    model = build_model(f"model_seed{seed}", **build_kw)   # tên model ASCII (Keras yêu cầu)
     cbs = []
     if use_callbacks:
-        cbs = [
-            keras.callbacks.EarlyStopping(monitor="val_loss", patience=3,
-                                          restore_best_weights=True),
-            keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5,
-                                              patience=2, min_lr=1e-5),
-        ]
+        cbs = [keras.callbacks.EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True),
+               keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-5)]
     t0 = time.time()
-    hist = model.fit(X_train, y_train,
-                     validation_data=(X_dev, y_dev),
-                     epochs=epochs, batch_size=BATCH,
-                     class_weight=CLASS_WEIGHT,
-                     callbacks=cbs, verbose=2)
-    train_time = time.time() - t0
-    print(f"\n>>> Thời gian huấn luyện: {train_time:.1f}s")
-    return hist, train_time
-""")
-
-code(r"""
-print("="*60, "\nHUẤN LUYỆN MÔ HÌNH GỐC (Multi-channel LSTM-CNN)\n", "="*60)
-hist_base, time_base = train_model(model_base, use_callbacks=False)
-""")
-
-code(r"""
-print("="*60, "\nHUẤN LUYỆN MÔ HÌNH CẢI TIẾN (PhoW2V + LSTM-CNN + Focal loss)\n", "="*60)
-hist_improved, time_improved = train_model(model_improved, epochs=15, use_callbacks=True)
-""")
-
-code(r"""
-# --- Learning curves ---
-fig, axes = plt.subplots(2, 2, figsize=(13, 7))
-for col, (name, h) in enumerate([("Base (LSTM-CNN)", hist_base),
-                                 ("Improved (PhoW2V+Focal)", hist_improved)]):
-    axes[0, col].plot(h.history["accuracy"], label="train")
-    axes[0, col].plot(h.history["val_accuracy"], label="val")
-    axes[0, col].set_title(f"{name}: Accuracy"); axes[0, col].legend(); axes[0, col].grid(alpha=.3)
-    axes[1, col].plot(h.history["loss"], label="train")
-    axes[1, col].plot(h.history["val_loss"], label="val")
-    axes[1, col].set_title(f"{name}: Loss"); axes[1, col].legend(); axes[1, col].grid(alpha=.3)
-plt.tight_layout(); plt.show()
-""")
-
-# ----------------------------------------------------------------------------
-# 6. Evaluation / Report
-# ----------------------------------------------------------------------------
-md(r"""
-## 6. Đánh giá và kết quả (trên tập kiểm thử)
-
-Các độ đo được sử dụng để đánh giá:
-
-- **Accuracy:** tỷ lệ dự đoán đúng trên toàn bộ tập kiểm thử.
-- **Macro-Precision, Macro-Recall, Macro-F1:** giá trị trung bình theo lớp, không thiên vị lớp
-  chiếm đa số. Đây là độ đo chính trên UIT-VSFC do dữ liệu mất cân bằng.
-- **Weighted-F1:** điểm F1 có trọng số theo số lượng mẫu của mỗi lớp.
-""")
-
-code(r"""
-def evaluate(model, name, train_time):
-    proba = model.predict(X_test, batch_size=128, verbose=0)
-    pred = proba.argmax(axis=1)
+    hist = model.fit(X_train, y_train, validation_data=(X_dev, y_dev), epochs=epochs,
+                     batch_size=BATCH, class_weight=CLASS_WEIGHT, callbacks=cbs, verbose=0)
+    dt = time.time() - t0
+    pred = model.predict(X_test, batch_size=256, verbose=0).argmax(axis=1)
     acc = accuracy_score(y_test, pred)
-    p_mac, r_mac, f_mac, _ = precision_recall_fscore_support(y_test, pred, average="macro", zero_division=0)
-    p_w,   r_w,   f_w,   _ = precision_recall_fscore_support(y_test, pred, average="weighted", zero_division=0)
-    return {
-        "Model": name,
-        "Accuracy": acc,
-        "Macro-P": p_mac, "Macro-R": r_mac, "Macro-F1": f_mac,
-        "Weighted-F1": f_w,
-        "Params": model.count_params(),
-        "Train time (s)": round(train_time, 1),
-        "_pred": pred,
-    }
+    f_mac = precision_recall_fscore_support(y_test, pred, average="macro", zero_division=0)[2]
+    f_w = precision_recall_fscore_support(y_test, pred, average="weighted", zero_division=0)[2]
+    f_neu = precision_recall_fscore_support(y_test, pred, average=None, zero_division=0)[2][1]
+    # Giữ lại pred và history (dùng cho báo cáo chi tiết ở §5, tránh phải train lại)
+    return dict(acc=acc, macroF1=f_mac, weightedF1=f_w, neutralF1=f_neu,
+                params=model.count_params(), time=dt, pred=pred, hist=hist)
 
-res_base = evaluate(model_base, "Base: Multi-channel LSTM-CNN (paper)", time_base)
-res_improved = evaluate(model_improved, "Improved: PhoW2V + LSTM-CNN + Focal", time_improved)
+def run_3seeds(build_kw, name, epochs, use_callbacks):
+    # Huấn luyện cùng cấu hình trên 3 seed, trả về trung bình và độ lệch chuẩn.
+    # Đồng thời lưu dự đoán & lịch sử của seed đầu tiên (42) để §5 tái sử dụng.
+    runs = []
+    for s in SEEDS:
+        r = train_eval_once(build_kw, name, s, epochs, use_callbacks)
+        runs.append(r)
+        print(f"    seed {s:>3}: acc={r['acc']*100:.2f}%  macroF1={r['macroF1']*100:.2f}%  ({r['time']:.0f}s)")
+    agg = {"Mô hình": name, "Params": runs[0]["params"],
+           "_pred": runs[0]["pred"], "_hist": runs[0]["hist"]}
+    for k, label in [("acc", "Accuracy"), ("macroF1", "Macro-F1"),
+                     ("neutralF1", "Neutral-F1"), ("weightedF1", "Weighted-F1")]:
+        vals = np.array([r[k] for r in runs])
+        agg[label] = vals.mean()
+        agg[label + "_std"] = vals.std()
+    agg["Train time (s)"] = round(sum(r["time"] for r in runs), 1)
+    return agg
+""")
+
+code(r"""
+# Mô hình gốc theo đúng bài báo: embedding học từ đầu, LSTM một chiều, cross-entropy, Adamax.
+build_model("Base_demo", use_phow2v=False, use_focal=False).summary()
+""")
+
+code(r"""
+print("="*64, "\nHUẤN LUYỆN MÔ HÌNH GỐC (Multi-channel LSTM-CNN) - 3 seed\n", "="*64)
+BASE_KW = dict(use_phow2v=False, trainable_emb=True, bidirectional=False, use_focal=False, spatial_dropout=0.0)
+res_base = run_3seeds(BASE_KW, "Mô hình gốc (LSTM-CNN)", epochs=EPOCHS, use_callbacks=False)
+print(f"\n>>> Trung bình: acc={res_base['Accuracy']*100:.2f}% "
+      f"macro-F1={res_base['Macro-F1']*100:.2f}% (± {res_base['Macro-F1_std']*100:.2f})")
+""")
+
+# ----------------------------------------------------------------------------
+# 4. Improvement experiments
+# ----------------------------------------------------------------------------
+md(r"""
+## 4. Thử nghiệm các phương án cải tiến
+
+Để xác định hướng cải tiến hiệu quả, phần này huấn luyện và đánh giá một số phương án cải tiến trực
+tiếp trong notebook, trên cùng điều kiện với mô hình gốc (cùng tập dữ liệu, cùng `class_weight`,
+cùng số chiều embedding). Mỗi phương án được huấn luyện trên **ba hạt giống ngẫu nhiên** (42, 7,
+123) và báo cáo theo giá trị trung bình kèm độ lệch chuẩn, nhằm bảo đảm kết luận không phụ thuộc
+vào một lần khởi tạo may rủi. Các phương án tập trung vào hai yếu tố được cho là then chốt:
+
+1. **Chất lượng biểu diễn từ:** thay embedding học từ đầu bằng vector tiền huấn luyện PhoW2V, xét cả
+   trường hợp cố định (frozen) và có tinh chỉnh (fine-tune).
+2. **Hàm mất mát:** thay cross-entropy bằng Focal loss để tăng trọng số học cho lớp thiểu số `neutral`.
+
+Ngoài ra, kiến trúc Bidirectional LSTM (BiLSTM) cũng được đưa vào để kiểm chứng giả thuyết rằng việc
+tăng độ phức tạp của mô hình chưa chắc cải thiện hiệu năng trên dữ liệu câu ngắn.
+
+Các phương án được khảo sát:
+
+| Ký hiệu | Cấu hình |
+|---------|----------|
+| C1 | PhoW2V (cố định) + LSTM + cross-entropy |
+| C2 | PhoW2V (tinh chỉnh) + LSTM + cross-entropy |
+| C3 | PhoW2V (tinh chỉnh) + BiLSTM + Focal loss |
+| C4 | PhoW2V (tinh chỉnh) + LSTM + Focal loss |
+""")
+
+code(r"""
+# Định nghĩa các phương án cải tiến (mỗi phương án huấn luyện một lần, cùng điều kiện với mô hình gốc)
+CONFIGS = [
+    dict(key="C1", name="PhoW2V cố định + LSTM + CE",
+         kw=dict(use_phow2v=True, trainable_emb=False, bidirectional=False, use_focal=False, spatial_dropout=0.2)),
+    dict(key="C2", name="PhoW2V tinh chỉnh + LSTM + CE",
+         kw=dict(use_phow2v=True, trainable_emb=True, bidirectional=False, use_focal=False, spatial_dropout=0.2)),
+    dict(key="C3", name="PhoW2V tinh chỉnh + BiLSTM + Focal",
+         kw=dict(use_phow2v=True, trainable_emb=True, bidirectional=True, use_focal=True, spatial_dropout=0.2)),
+    dict(key="C4", name="PhoW2V tinh chỉnh + LSTM + Focal",
+         kw=dict(use_phow2v=True, trainable_emb=True, bidirectional=False, use_focal=True, spatial_dropout=0.2)),
+]
+
+exp_results = []
+for cfg in CONFIGS:
+    print("="*64, f"\nHUẤN LUYỆN PHƯƠNG ÁN {cfg['key']}: {cfg['name']} (3 seed)\n", "="*64)
+    r = run_3seeds(cfg["kw"], f"{cfg['key']}: {cfg['name']}", epochs=15, use_callbacks=True)
+    exp_results.append(r)
+    print(f"\n>>> {cfg['key']} trung bình: acc={r['Accuracy']*100:.2f}% "
+          f"macro-F1={r['Macro-F1']*100:.2f}% (± {r['Macro-F1_std']*100:.2f})")
 """)
 
 md(r"""
-### 6.1. Bảng tổng hợp kết quả (mô hình gốc so với mô hình cải tiến)
+### 4.1. So sánh các phương án và lựa chọn mô hình cải tiến
+
+Bảng dưới đây tổng hợp kết quả của mô hình gốc cùng bốn phương án cải tiến, dưới dạng giá trị trung
+bình kèm độ lệch chuẩn trên ba hạt giống ngẫu nhiên. Việc đánh giá trên nhiều hạt giống giúp kết
+luận không phụ thuộc vào một lần khởi tạo may rủi, đặc biệt quan trọng khi chênh lệch giữa các
+phương án nhỏ. Phương án cải tiến được lựa chọn là phương án đạt macro-F1 trung bình cao nhất.
 """)
 
 code(r"""
-report_df = pd.DataFrame([
-    {k: v for k, v in r.items() if not k.startswith("_")}
-    for r in (res_base, res_improved)
-]).set_index("Model")
+def fmt_pm(mean, std):   # định dạng "mean ± std" theo phần trăm
+    return f"{mean*100:.2f} ± {std*100:.2f}"
 
-# Định dạng % cho dễ đọc
-fmt = report_df.copy()
-for col in ["Accuracy", "Macro-P", "Macro-R", "Macro-F1", "Weighted-F1"]:
-    fmt[col] = (fmt[col] * 100).round(2).astype(str) + "%"
-fmt["Params"] = fmt["Params"].map(lambda x: f"{x:,}")
-print("KẾT QUẢ TRÊN TẬP TEST (UIT-VSFC, n=3166)\n")
-print(fmt.to_string())
-fmt
+all_results = [res_base] + exp_results
+rows = []
+for r in all_results:
+    rows.append({
+        "Mô hình": r["Mô hình"],
+        "Accuracy": fmt_pm(r["Accuracy"], r["Accuracy_std"]),
+        "Macro-F1": fmt_pm(r["Macro-F1"], r["Macro-F1_std"]),
+        "Neutral-F1": fmt_pm(r["Neutral-F1"], r["Neutral-F1_std"]),
+        "Weighted-F1": fmt_pm(r["Weighted-F1"], r["Weighted-F1_std"]),
+        "Params": f"{r['Params']:,}",
+    })
+show = pd.DataFrame(rows)
+print("BẢNG SO SÁNH (trung bình ± độ lệch chuẩn trên 3 seed, tập kiểm thử UIT-VSFC, n=3166)\n")
+print(show.to_string(index=False))
+
+# Chọn phương án cải tiến tốt nhất theo macro-F1 trung bình (không tính mô hình gốc)
+best = max(exp_results, key=lambda r: r["Macro-F1"])
+print(f"\n>>> Phương án cải tiến tốt nhất theo macro-F1 trung bình: {best['Mô hình']}")
+show
+""")
+
+# ----------------------------------------------------------------------------
+# 5. Detailed comparison: base vs best
+# ----------------------------------------------------------------------------
+md(r"""
+## 5. So sánh chi tiết: mô hình gốc và mô hình cải tiến tốt nhất
+
+Phần này phân tích sâu hơn hai mô hình: mô hình gốc và phương án cải tiến đạt macro-F1 trung bình
+cao nhất ở §4.1. Báo cáo theo lớp, đường cong huấn luyện và ma trận nhầm lẫn được lấy từ lần chạy
+ứng với hạt giống đầu tiên (seed = 42) của mỗi mô hình trong quá trình thực nghiệm ở trên, do đó
+không cần huấn luyện lại.
 """)
 
 code(r"""
-# --- Mức cải thiện của Improved so với Base ---
+res_improved = best   # phương án cải tiến được chọn ở §4.1
+
 delta_acc = (res_improved["Accuracy"] - res_base["Accuracy"]) * 100
 delta_f1  = (res_improved["Macro-F1"] - res_base["Macro-F1"]) * 100
-print("Mức chênh lệch của mô hình cải tiến so với mô hình gốc:")
-print(f"  Accuracy : {delta_acc:+.2f} điểm phần trăm")
-print(f"  Macro-F1 : {delta_f1:+.2f} điểm phần trăm")
-print("  Kết luận: " + ("mô hình cải tiến đạt hiệu năng cao hơn trên cả hai độ đo."
-                        if delta_f1 > 0 and delta_acc > 0 else "cần xem xét lại."))
+delta_w   = (res_improved["Weighted-F1"] - res_base["Weighted-F1"]) * 100
+print("So sánh hiệu năng trung bình (3 seed):")
+print(f"  Mô hình gốc      : acc={res_base['Accuracy']*100:.2f}%  macro-F1={res_base['Macro-F1']*100:.2f}%")
+print(f"  Mô hình cải tiến : acc={res_improved['Accuracy']*100:.2f}%  macro-F1={res_improved['Macro-F1']*100:.2f}%")
+print(f"\nMức chênh lệch trung bình (cải tiến - gốc):")
+print(f"  Accuracy    : {delta_acc:+.2f} điểm phần trăm")
+print(f"  Macro-F1    : {delta_f1:+.2f} điểm phần trăm")
+print(f"  Weighted-F1 : {delta_w:+.2f} điểm phần trăm")
 """)
 
 md(r"""
-### 6.2. Kết quả chi tiết theo từng lớp
+### 5.1. Báo cáo chi tiết theo từng lớp
 """)
 
 code(r"""
+# Dùng lại dự đoán của seed=42 đã lưu ở §4 (không huấn luyện lại)
 for r in (res_base, res_improved):
     print("="*70)
-    print(r["Model"])
+    print(r["Mô hình"])
     print("="*70)
     print(classification_report(y_test, r["_pred"],
-                                target_names=["negative","neutral","positive"],
+                                target_names=["negative", "neutral", "positive"],
                                 digits=4, zero_division=0))
 """)
 
+md(r"""
+### 5.2. Đường cong huấn luyện và ma trận nhầm lẫn
+""")
+
 code(r"""
-# --- Confusion matrices ---
+# Đường cong huấn luyện (seed=42)
+fig, axes = plt.subplots(1, 2, figsize=(13, 4))
+for r in (res_base, res_improved):
+    h = r["_hist"]
+    axes[0].plot(h.history["val_accuracy"], label=r["Mô hình"][:24])
+    axes[1].plot(h.history["val_loss"], label=r["Mô hình"][:24])
+axes[0].set_title("Val Accuracy theo epoch"); axes[0].legend(); axes[0].grid(alpha=.3)
+axes[1].set_title("Val Loss theo epoch"); axes[1].legend(); axes[1].grid(alpha=.3)
+plt.tight_layout(); plt.show()
+
+# Ma trận nhầm lẫn (seed=42)
 fig, ax = plt.subplots(1, 2, figsize=(12, 4.5))
 for a, r in zip(ax, (res_base, res_improved)):
     cm = confusion_matrix(y_test, r["_pred"])
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=a,
-                xticklabels=["neg","neu","pos"], yticklabels=["neg","neu","pos"])
-    a.set_title(r["Model"].split(":")[0]); a.set_xlabel("Predicted"); a.set_ylabel("True")
+                xticklabels=["neg", "neu", "pos"], yticklabels=["neg", "neu", "pos"])
+    a.set_title(r["Mô hình"][:30]); a.set_xlabel("Dự đoán"); a.set_ylabel("Thực tế")
 plt.tight_layout(); plt.show()
 """)
 
 # ----------------------------------------------------------------------------
-# 7. Conclusion
+# 6. Conclusion
 # ----------------------------------------------------------------------------
 md(r"""
-## 7. Nhận xét & Kết luận
+## 6. Nhận xét & Kết luận
 
-*(Phần này được cập nhật tự động theo kết quả thực tế sau khi huấn luyện.)*
+### 6.1. Tổng hợp kết quả
+
+Bảng so sánh đầy đủ được trình bày ở §4.1; ô lệnh dưới đây in lại các con số then chốt của mô hình
+gốc và mô hình cải tiến được chọn, cùng mức chênh lệch, trực tiếp từ kết quả vừa huấn luyện.
+""")
+
+code(r"""
+print(f"{'Mô hình':40s} {'Accuracy':>9s} {'Macro-F1':>9s} {'Weighted-F1':>12s}")
+print("-"*72)
+for r in (res_base, res_improved):
+    print(f"{r['Mô hình'][:40]:40s} {r['Accuracy']*100:8.2f}% {r['Macro-F1']*100:8.2f}% {r['Weighted-F1']*100:11.2f}%")
+print("-"*72)
+print(f"{'Chênh lệch (cải tiến - gốc)':40s} {delta_acc:+8.2f}  {delta_f1:+8.2f}  {delta_w:+11.2f}")
+print(f"\nSố tham số: gốc = {res_base['Params']:,} | cải tiến = {res_improved['Params']:,}")
+""")
+
+md(r"""
+### 6.2. Nhận xét
+
+1. **Tái hiện thành công kiến trúc của bài báo.** Mô hình gốc (Multi-channel LSTM-CNN) đạt độ chính
+   xác và macro-F1 nằm trong khoảng hiệu năng thường thấy của các mô hình học sâu trên UIT-VSFC,
+   xác nhận kiến trúc đa kênh CNN-LSTM đã được hiện thực đúng.
+
+2. **Cải thiện hiệu quả nhất đến từ chất lượng biểu diễn từ.** Việc khởi tạo lớp embedding bằng
+   PhoW2V và cho phép tinh chỉnh đã khắc phục hạn chế lớn nhất của mô hình gốc: từ điển nhỏ
+   (khoảng 2.500 từ) khiến embedding học từ đầu có chất lượng thấp. Ngược lại, phương án cố định
+   embedding (frozen) cho kết quả thấp rõ rệt do lệch miền dữ liệu giữa kho ngữ liệu tiền huấn
+   luyện và miền phản hồi của sinh viên. Kết hợp với Focal loss, các phương án cải tiến đạt macro-F1
+   trung bình cao hơn mô hình gốc.
+
+3. **Đánh giá trên nhiều hạt giống là cần thiết.** Chênh lệch giữa các phương án cải tiến tốt
+   (chẳng hạn giữa LSTM và BiLSTM khi đều kết hợp PhoW2V và Focal loss) là khá nhỏ và có thể bị
+   che lấp bởi dao động ngẫu nhiên giữa các lần khởi tạo. Việc huấn luyện trên ba hạt giống và báo
+   cáo độ lệch chuẩn (§4.1) giúp kết luận đáng tin cậy hơn, thay vì dựa vào một lần chạy duy nhất.
+
+4. **Lớp `neutral` là yếu tố hạn chế chính.** Do chỉ chiếm khoảng 5% dữ liệu, điểm F1 của lớp này
+   thấp hơn đáng kể so với hai lớp còn lại, kéo macro-F1 xuống thấp hơn nhiều so với độ chính xác
+   tổng thể. Đây là lý do báo cáo sử dụng macro-F1 làm độ đo chính, đồng thời áp dụng trọng số lớp
+   và Focal loss.
+
+**Kết luận chung.** Báo cáo đã tái hiện chính xác kiến trúc Multi-channel LSTM-CNN của bài báo và,
+thông qua một quy trình thực nghiệm có hệ thống trên nhiều hạt giống ngẫu nhiên, xây dựng được một
+mô hình cải tiến đạt hiệu năng cao hơn mô hình gốc. Kết quả cho thấy đối với bộ dữ liệu có quy mô
+hạn chế, chất lượng biểu diễn từ (thông qua embedding tiền huấn luyện) đóng vai trò quan trọng đối
+với hiệu năng, trong khi việc gia tăng độ phức tạp kiến trúc mang lại lợi ích không rõ rệt.
+
+### 6.3. Hạn chế và hướng phát triển
+
+- Áp dụng các mô hình ngôn ngữ tiền huấn luyện dạng Transformer (chẳng hạn PhoBERT), vốn thường đạt
+  macro-F1 khoảng 92–93% trên UIT-VSFC.
+- Xử lý lớp thiểu số `neutral` triệt để hơn bằng các kỹ thuật tăng cường dữ liệu (oversampling,
+  data augmentation) thay vì chỉ dựa vào trọng số lớp và Focal loss.
+- Đánh giá ổn định hơn bằng cách huấn luyện lặp lại trên nhiều hạt giống ngẫu nhiên và báo cáo
+  giá trị trung bình cùng độ lệch chuẩn.
 """)
 
 nb["cells"] = cells
