@@ -3,49 +3,54 @@ import json
 
 NB = "25C15052.ipynb"
 
-NEW_CONCLUSION = r"""## 7. Nhận xét & Kết luận
+NEW_CONCLUSION = r"""## 7. Nhận xét và Kết luận
 
-### Kết quả thực tế (tập test UIT-VSFC, n = 3.166)
+### 7.1. Kết quả trên tập kiểm thử (UIT-VSFC, n = 3.166)
 
-| Model | Accuracy | Macro-F1 | Weighted-F1 | Params |
-|-------|:--------:|:--------:|:-----------:|:------:|
-| Base: Multi-channel LSTM-CNN (paper) | 88.98% | 75.43% | 88.93% | 710.701 |
-| **Improved: PhoW2V + LSTM-CNN + Focal** | **90.15%** | **75.99%** | **89.70%** | 710.701 |
-| **Δ (Improved − Base)** | **+1.17** | **+0.56** | **+0.77** | (bằng nhau) |
+| Mô hình | Accuracy | Macro-F1 | Weighted-F1 | Số tham số |
+|---------|:--------:|:--------:|:-----------:|:----------:|
+| Mô hình gốc (Multi-channel LSTM-CNN) | 88.98% | 75.43% | 88.93% | 710.701 |
+| **Mô hình cải tiến (PhoW2V + LSTM-CNN + Focal)** | **90.15%** | **75.99%** | **89.70%** | 710.701 |
+| **Chênh lệch (Δ)** | **+1.17** | **+0.56** | **+0.77** | bằng nhau |
 
-> Cả hai model có **cùng số tham số (710.701)** → phần cải thiện đến hoàn toàn từ **chất lượng
-> embedding + hàm loss**, không phải vì model "to hơn". Đây là cải tiến *thực sự*, được xác nhận
-> thêm bằng thực nghiệm multi-seed ở §4.1 (Improved ổn định vượt Base qua 3 seeds).
+Hai mô hình có cùng số lượng tham số (710.701), do đó phần cải thiện hiệu năng đến hoàn toàn từ
+chất lượng biểu diễn từ và hàm mất mát, không phải từ việc tăng dung lượng mô hình. Mức cải thiện
+này còn được xác nhận là ổn định qua thực nghiệm trên nhiều hạt giống ngẫu nhiên ở §4.1.
 
-### Nhận xét
+### 7.2. Nhận xét
 
-1. **Tái hiện thành công kiến trúc paper.** Model gốc (Multi-channel LSTM-CNN) đạt
-   **accuracy ≈ 89%, macro-F1 ≈ 75.4%** — đúng dải hiệu năng deep learning trên UIT-VSFC.
+1. **Tái hiện thành công kiến trúc của bài báo.** Mô hình gốc đạt độ chính xác khoảng 89% và
+   macro-F1 khoảng 75.4%, nằm trong khoảng hiệu năng thường thấy của các mô hình học sâu trên UIT-VSFC.
 
-2. **Cải tiến hiệu quả nhất là thay embedding, không phải thay mạng.** Khởi tạo embedding bằng
-   **PhoW2V** (word2vec tiếng Việt, train trên 20GB) rồi fine-tune đã giải quyết nút thắt lớn nhất:
-   vocabulary chỉ ~2.5k từ nên embedding học-từ-đầu rất yếu. Kết hợp **focal loss** giúp tập trung
-   vào mẫu khó. Kết quả: **+1.17% accuracy, +0.56% macro-F1**, và macro-precision tăng mạnh
-   (75.7% → 79.2%).
+2. **Cải thiện hiệu quả nhất đến từ biểu diễn từ, không phải từ kiến trúc mạng.** Việc khởi tạo
+   lớp embedding bằng PhoW2V và tinh chỉnh đã khắc phục hạn chế lớn nhất của mô hình gốc: từ điển
+   nhỏ khiến embedding học từ đầu có chất lượng thấp. Kết hợp với Focal loss, mô hình cải tiến tăng
+   1.17 điểm phần trăm độ chính xác và 0.56 điểm phần trăm macro-F1, trong đó macro-precision tăng
+   đáng kể (từ 75.7% lên 79.2%).
 
-3. **Phức tạp hơn ≠ tốt hơn.** Thực nghiệm §4.1 cho thấy **BiLSTM kém và rất nhiễu** (macro-F1
-   74.75 ± 3.99) trên dữ liệu câu ngắn này. Việc giữ **LSTM một chiều như paper** lại là lựa chọn
-   đúng — minh chứng cho việc cải tiến phải dựa trên **bằng chứng đo được**, không phải cảm tính.
+3. **Tăng độ phức tạp không đồng nghĩa với hiệu năng cao hơn.** Thực nghiệm ở §4.1 cho thấy kiến
+   trúc BiLSTM đạt kết quả thấp và kém ổn định (macro-F1 74.75 ± 3.99) trên loại dữ liệu câu ngắn.
+   Việc giữ nguyên LSTM một chiều như bài báo là lựa chọn phù hợp, cho thấy quá trình cải tiến cần
+   dựa trên bằng chứng định lượng.
 
-4. **Lớp `neutral` vẫn là nút thắt.** Chỉ ~5% dữ liệu nên F1 của nó (~43%) thấp hơn hẳn
-   negative/positive (~92%), kéo macro-F1 (~76%) thấp hơn nhiều so với accuracy (~90%). Đây là lý
-   do ta report macro-F1 và dùng `class_weight` + focal loss.
+4. **Lớp `neutral` là yếu tố hạn chế chính.** Do chỉ chiếm khoảng 5% dữ liệu, điểm F1 của lớp này
+   (khoảng 43%) thấp hơn nhiều so với hai lớp còn lại (khoảng 92%), kéo macro-F1 (khoảng 76%) xuống
+   thấp hơn đáng kể so với độ chính xác (khoảng 90%). Đây là lý do báo cáo sử dụng macro-F1 làm độ
+   đo chính, đồng thời áp dụng trọng số lớp và Focal loss.
 
-> **Kết luận:** đã tái hiện đúng kiến trúc paper và xây dựng được bản cải tiến **thực sự vượt trội
-> một cách ổn định**, với chi phí tham số bằng 0 (cùng số params). Bài học chính: trên dữ liệu nhỏ,
-> **chất lượng biểu diễn từ (embedding) quan trọng hơn việc tăng độ phức tạp mô hình**.
+**Kết luận chung.** Báo cáo đã tái hiện chính xác kiến trúc Multi-channel LSTM-CNN của bài báo và
+xây dựng một mô hình cải tiến đạt hiệu năng cao hơn một cách ổn định mà không làm tăng số lượng
+tham số. Kết quả cho thấy đối với bộ dữ liệu có quy mô hạn chế, chất lượng biểu diễn từ đóng vai
+trò quan trọng hơn việc gia tăng độ phức tạp của mô hình.
 
-### Hạn chế & hướng phát triển
+### 7.3. Hạn chế và hướng phát triển
 
-- Dùng **PhoBERT** (transformer tiền huấn luyện) thường đạt macro-F1 ~92-93% trên UIT-VSFC — bước
-  tiếp theo tự nhiên.
-- Lớp neutral hiếm: thử **oversampling / data augmentation** thay vì chỉ class_weight + focal loss.
-- Thử PhoW2V 300d (giàu thông tin hơn) — trong thực nghiệm cho kết quả tương đương 100d nhưng chậm hơn.
+- Áp dụng các mô hình ngôn ngữ tiền huấn luyện dạng Transformer (chẳng hạn PhoBERT), vốn thường đạt
+  macro-F1 khoảng 92–93% trên UIT-VSFC.
+- Xử lý lớp thiểu số `neutral` triệt để hơn bằng các kỹ thuật tăng cường dữ liệu (oversampling,
+  data augmentation) thay vì chỉ dựa vào trọng số lớp và Focal loss.
+- Khảo sát PhoW2V 300 chiều; trong các thực nghiệm hiện tại, phiên bản này cho kết quả tương đương
+  phiên bản 100 chiều nhưng có chi phí tính toán cao hơn.
 """
 
 with open(NB, encoding="utf-8") as f:

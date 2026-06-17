@@ -18,58 +18,67 @@ def code(text):
 # 0. Title / Introduction
 # ----------------------------------------------------------------------------
 md(r"""
-# Multi-channel LSTM-CNN cho Phân tích Cảm xúc Tiếng Việt
+# Mô hình Multi-channel LSTM-CNN cho Phân tích Cảm xúc Tiếng Việt
 
-**Bài tập Deep Learning** — Tái hiện kiến trúc trong bài báo:
+Báo cáo này tái hiện kiến trúc mạng nơ-ron kết hợp CNN và LSTM được đề xuất trong bài báo:
 
 > Vo, Q., Nguyen, H., Le, B., Nguyen, M. (2017).
 > *Multi-channel LSTM-CNN model for Vietnamese sentiment analysis.*
 > 9th International Conference on Knowledge and Systems Engineering (KSE), IEEE.
 > [ResearchGate](https://www.researchgate.net/publication/321259272_Multi-channel_LSTM-CNN_model_for_Vietnamese_sentiment_analysis)
-> · [Code gốc của tác giả](https://github.com/ntienhuy/MultiChannel)
+> · [Mã nguồn của nhóm tác giả](https://github.com/ntienhuy/MultiChannel)
+
+Báo cáo đồng thời huấn luyện và đánh giá **mô hình gốc** cùng một **mô hình cải tiến** trên một bài
+toán phân loại văn bản tiếng Việt thực tế, đối chiếu hiệu năng giữa hai mô hình bằng các độ đo định lượng.
 
 ---
 
-## Nội dung bài tập
+## Cấu trúc báo cáo
 
-| # | Yêu cầu | Phần trong notebook |
-|---|---------|---------------------|
-| 1 | Thiết kế kiến trúc CNN + LSTM như trong paper | §3 (model gốc) |
-| 2 | Tìm 1 bài toán text classification tiếng Việt + dataset | §1 (UIT-VSFC) |
-| 3 | Huấn luyện model trên dataset | §5 |
-| 4 | Report kết quả (dạng bảng) | §6 |
-
-Theo yêu cầu của thầy: report **cả mô hình gốc lẫn mô hình cải tiến**, kết quả trình bày **dạng bảng**.
+| Mục | Nội dung |
+|-----|----------|
+| §1 | Bài toán và bộ dữ liệu |
+| §2 | Thiết lập môi trường, tiền xử lý và biểu diễn từ |
+| §3 | Kiến trúc mô hình gốc (theo bài báo) |
+| §4 | Mô hình cải tiến và thực nghiệm lựa chọn kiến trúc |
+| §5 | Huấn luyện |
+| §6–§7 | Kết quả, đánh giá và kết luận |
 """)
 
 # ----------------------------------------------------------------------------
 # 1. Bài toán & Dataset
 # ----------------------------------------------------------------------------
 md(r"""
-## 1. Bài toán & Dataset
+## 1. Bài toán và bộ dữ liệu
 
-**Bài toán:** Phân loại cảm xúc (sentiment classification) — một bài toán *text classification* tiếng Việt.
-Cho một câu phản hồi, dự đoán nó mang sắc thái **negative / neutral / positive**.
+**Bài toán.** Phân loại cảm xúc (sentiment classification) là một dạng bài toán phân loại văn bản
+(text classification). Cho một câu phản hồi tiếng Việt, mô hình dự đoán sắc thái cảm xúc thuộc một
+trong ba lớp: *tiêu cực (negative)*, *trung lập (neutral)* hoặc *tích cực (positive)*.
 
-**Dataset: UIT-VSFC** (Vietnamese Students' Feedback Corpus) — Nguyen et al., 2018.
-- ~16.175 câu phản hồi của sinh viên, gán nhãn thủ công (độ đồng thuận annotator > 91%).
-- 3 lớp cảm xúc: `0 = negative`, `1 = neutral`, `2 = positive` — **khớp đúng** đầu ra 3 lớp của paper gốc.
-- Chia sẵn: **train 11.426 / dev 1.583 / test 3.166**.
-- Văn bản đã được **tách từ sẵn** (word-segmented), nên không cần thư viện tách từ tiếng Việt.
+**Bộ dữ liệu UIT-VSFC** (Vietnamese Students' Feedback Corpus, Nguyen và cộng sự, 2018):
 
-> **Vì sao chọn UIT-VSFC?** Đây là benchmark chuẩn cho NLP tiếng Việt, có sẵn nhãn 3 lớp giống
-> hệt thiết kế của paper, đủ lớn để huấn luyện mạng sâu nhưng vẫn nhẹ để chạy trên CPU.
+- Gồm khoảng 16.175 câu phản hồi của sinh viên, được gán nhãn thủ công với độ đồng thuận giữa các
+  người gán nhãn (inter-annotator agreement) đạt trên 91%.
+- Ba lớp cảm xúc `0 = negative`, `1 = neutral`, `2 = positive`, tương ứng đúng với không gian đầu ra
+  ba lớp của mô hình trong bài báo gốc.
+- Đã được chia sẵn thành ba tập: huấn luyện 11.426 câu, kiểm định (dev) 1.583 câu, kiểm thử (test) 3.166 câu.
+- Văn bản đã được tách từ sẵn (word-segmented), do đó không cần áp dụng thêm công cụ tách từ tiếng Việt.
 
-**Lưu ý quan trọng — mất cân bằng lớp:** lớp `neutral` chỉ chiếm ~4-5%. Vì vậy ngoài *accuracy*
-ta sẽ report thêm **macro-F1** (trung bình F1 các lớp, không thiên vị lớp đông) và dùng
-`class_weight` khi huấn luyện. Đây cũng là chỉ số chính mà các paper dùng để so sánh trên UIT-VSFC.
+**Lý do lựa chọn.** UIT-VSFC là một bộ dữ liệu chuẩn (benchmark) cho xử lý ngôn ngữ tự nhiên tiếng
+Việt, có nhãn ba lớp tương thích trực tiếp với kiến trúc của bài báo và có kích thước đủ lớn để
+huấn luyện mạng học sâu.
+
+**Vấn đề mất cân bằng lớp.** Lớp `neutral` chỉ chiếm khoảng 4–5% tổng số mẫu. Do đó, bên cạnh độ
+chính xác (accuracy), báo cáo sử dụng **macro-F1** (trung bình điểm F1 của các lớp, không thiên vị
+lớp chiếm đa số) làm độ đo chính, đồng thời áp dụng trọng số lớp (`class_weight`) trong quá trình
+huấn luyện. Đây cũng là độ đo được sử dụng phổ biến để so sánh trên UIT-VSFC.
 """)
 
 # ----------------------------------------------------------------------------
 # 2. Setup / imports
 # ----------------------------------------------------------------------------
 md(r"""
-## 2. Thiết lập môi trường & nạp dữ liệu
+## 2. Thiết lập môi trường và nạp dữ liệu
 """)
 
 code(r"""
@@ -103,15 +112,16 @@ print("GPU(s)     :", tf.config.list_physical_devices('GPU') or "None (CPU mode)
 """)
 
 md(r"""
-### Tự động tải dataset UIT-VSFC
+### 2.0. Tự động tải bộ dữ liệu UIT-VSFC
 
-Notebook này là **file nộp duy nhất** — không kèm dữ liệu rời. Cell dưới tự tải dataset
-**UIT-VSFC** về thư mục `data/UIT-VSFC/` nếu chưa có.
+Ô lệnh bên dưới tự động tải bộ dữ liệu UIT-VSFC về thư mục `data/UIT-VSFC/` nếu chưa tồn tại, giúp
+báo cáo có thể chạy lại độc lập mà không cần đính kèm dữ liệu rời.
 
-**Nguồn dữ liệu:** dataset có trên [HuggingFace `uitnlp/vietnamese_students_feedback`](https://huggingface.co/datasets/uitnlp/vietnamese_students_feedback).
-Tuy nhiên bản HF dùng *loading script* kiểu cũ (đã bị `datasets` ≥ 3.0 ngừng hỗ trợ), nên ta tải
-trực tiếp từ **Google Drive** — chính là nguồn gốc mà script HF trỏ tới (9 file: train/dev/test ×
-sents/sentiments/topics). Chỉ cần kết nối mạng.
+**Nguồn dữ liệu.** Bộ dữ liệu được công bố trên [HuggingFace `uitnlp/vietnamese_students_feedback`](https://huggingface.co/datasets/uitnlp/vietnamese_students_feedback).
+Tuy nhiên, phiên bản trên HuggingFace sử dụng cơ chế *loading script* đã bị thư viện `datasets`
+phiên bản 3.0 trở lên ngừng hỗ trợ. Do đó, dữ liệu được tải trực tiếp từ Google Drive, vốn là
+nguồn gốc mà loading script của HuggingFace tham chiếu đến (gồm 9 tệp: ba tập train/dev/test, mỗi
+tập có ba tệp sents/sentiments/topics).
 """)
 
 code(r"""
@@ -196,15 +206,17 @@ plt.suptitle("UIT-VSFC sentiment label distribution"); plt.tight_layout(); plt.s
 # 2b. Preprocessing: tokenize -> sequences -> padding
 # ----------------------------------------------------------------------------
 md(r"""
-## 2.1 Tiền xử lý: token hoá → chỉ số → padding
+## 2.1. Tiền xử lý dữ liệu
 
-Quy trình giống paper gốc:
-1. Xây **vocabulary** từ tập train (Keras `Tokenizer`), giới hạn `MAX_WORDS` từ phổ biến nhất.
-2. Chuyển mỗi câu thành **chuỗi chỉ số** từ.
-3. **Padding** về cùng độ dài `MAX_LEN`.
+Quy trình tiền xử lý tuân theo bài báo gốc, gồm ba bước:
 
-> Paper dùng `MAX_LEN=400` cho *document*. Ở đây dữ liệu là *câu* phản hồi ngắn (p95 = 33 từ),
-> nên ta đặt `MAX_LEN=100` (phủ > 99% mẫu) — nhẹ hơn nhiều khi train trên CPU mà không mất thông tin.
+1. Xây dựng từ điển (vocabulary) từ tập huấn luyện bằng `Tokenizer` của Keras.
+2. Biểu diễn mỗi câu thành chuỗi chỉ số của các từ.
+3. Đệm (padding) các chuỗi về cùng độ dài cố định `MAX_LEN`.
+
+Bài báo gốc sử dụng `MAX_LEN = 400` cho đơn vị văn bản là *văn bản (document)*. Trong nghiên cứu
+này, đơn vị xử lý là *câu* phản hồi có độ dài ngắn (phân vị 95 chỉ khoảng 33 từ), do đó `MAX_LEN`
+được đặt bằng 100, đủ bao phủ trên 99% số mẫu mà vẫn giảm đáng kể chi phí tính toán.
 """)
 
 code(r"""
@@ -242,22 +254,22 @@ print("class_weight:", {LABELS[k]: round(v, 3) for k, v in CLASS_WEIGHT.items()}
 """)
 
 md(r"""
-## 2.2 Pretrained embedding tiếng Việt — PhoW2V (dùng cho model cải tiến)
+## 2.2. Biểu diễn từ bằng vector tiền huấn luyện PhoW2V (cho mô hình cải tiến)
 
-Một hạn chế lớn của model gốc: lớp `Embedding` **học từ đầu** trên vocabulary rất nhỏ
-(chỉ ~2.5k từ của UIT-VSFC) → các vector từ yếu, kém tổng quát.
+Một hạn chế của mô hình gốc là lớp `Embedding` được học từ đầu trên một từ điển nhỏ (khoảng 2.500
+từ của UIT-VSFC). Với lượng dữ liệu hạn chế như vậy, các vector từ thu được thường có chất lượng
+biểu diễn thấp và khả năng tổng quát hoá kém.
 
-Cách khắc phục hiệu quả: khởi tạo embedding bằng **PhoW2V** —
-[bộ word2vec tiếng Việt](https://github.com/datquocnguyen/PhoW2V) (Nguyen et al., EMNLP-2020)
-được train sẵn trên corpus 20GB. Ta dùng bản **syllable-level 100 chiều**.
+Để khắc phục, mô hình cải tiến khởi tạo lớp embedding bằng **PhoW2V**, một bộ vector từ tiếng Việt
+tiền huấn luyện ([Nguyen và cộng sự, EMNLP-2020](https://github.com/datquocnguyen/PhoW2V)) được
+huấn luyện trên kho ngữ liệu khoảng 20GB. Báo cáo sử dụng phiên bản theo âm tiết (syllable-level)
+với số chiều bằng 100. Tỷ lệ từ trong UIT-VSFC có vector tiền huấn luyện tương ứng (coverage) đạt
+khoảng 86%.
 
-> File PhoW2V gốc nặng ~1.1GB (979k từ) — quá nặng để tải mỗi lần chạy. Vì đây là **file nộp duy
-> nhất**, ta đã **trích sẵn** ma trận gọn chỉ chứa vector cho vocab UIT-VSFC (< 1MB) và **nhúng thẳng
-> vào notebook dưới dạng base64 (nén zlib)**. Cell dưới giải nén ra ma trận, không cần file ngoài.
-> **Coverage ≈ 86%** từ vựng có vector pretrained.
->
-> *(Cách dựng lại từ đầu: tải PhoW2V syllable 100d từ github.com/datquocnguyen/PhoW2V → chạy
-> `build_embedding_matrix.py`. Code trích đính kèm trong README.)*
+*Ghi chú kỹ thuật.* Tệp PhoW2V gốc có dung lượng khoảng 1.1GB (979.000 từ). Để báo cáo gọn nhẹ và
+tái lập được, ma trận embedding rút gọn chỉ chứa vector cho từ điển UIT-VSFC (dưới 1MB) đã được
+trích xuất sẵn và nhúng trực tiếp dưới dạng base64 (nén zlib) trong ô lệnh phía dưới. Quy trình
+trích xuất từ tệp gốc được mô tả trong tệp `README.md` kèm theo mã nguồn.
 """)
 
 code(r"""
@@ -290,7 +302,7 @@ with open("_emb_vocab_b64.txt") as f:
     _vocab_b64 = f.read().strip()
 
 code(
-    "# (Dữ liệu nhúng — không cần đọc/sửa) Ma trận PhoW2V + vocab, base64(zlib-nén).\n"
+    "# (Dữ liệu nhúng, không cần đọc/sửa) Ma trận PhoW2V + vocab, base64(zlib-nén).\n"
     "import io\n"
     f"__EMB_NPY_B64__ = \"{_npy_b64}\"\n"
     f"__EMB_VOCAB_B64__ = \"{_vocab_b64}\"\n"
@@ -301,25 +313,28 @@ code(
 # 3. Original architecture
 # ----------------------------------------------------------------------------
 md(r"""
-## 3. Kiến trúc gốc — Multi-channel LSTM-CNN (theo paper)
+## 3. Kiến trúc mô hình gốc (Multi-channel LSTM-CNN)
 
-Ý tưởng cốt lõi của paper: **kết hợp đa kênh (multi-channel)** từ một lớp Embedding chung:
+Ý tưởng cốt lõi của bài báo là kết hợp nhiều kênh đặc trưng (multi-channel) xuất phát từ một lớp
+Embedding dùng chung:
 
-- **Kênh CNN** (3 nhánh song song): các `Conv1D` với kích thước cửa sổ **3, 5, 7** học đặc trưng
-  cục bộ (n-gram). Mỗi nhánh sau đó **max-pool-over-time** → 1 vector đặc trưng.
-- **Kênh LSTM**: một `LSTM` học phụ thuộc tuần tự (ngữ cảnh xa) toàn câu.
-- **Hợp nhất (concatenate)** đầu ra của tất cả các kênh → `Dense` → `softmax` 3 lớp.
+- **Kênh CNN** gồm ba nhánh tích chập song song. Các lớp `Conv1D` với kích thước cửa sổ lần lượt
+  là 3, 5 và 7 nhằm trích xuất đặc trưng cục bộ (tương ứng các n-gram bậc khác nhau). Mỗi nhánh
+  được tổng hợp bằng phép gộp cực đại theo thời gian (max-pooling-over-time) thành một vector đặc trưng.
+- **Kênh LSTM** sử dụng một lớp `LSTM` để mô hình hoá các phụ thuộc tuần tự và ngữ cảnh xa trong câu.
+- Đầu ra của tất cả các kênh được **ghép nối (concatenate)**, đưa qua lớp `Dense` và cuối cùng là
+  lớp `softmax` ba lớp.
 
 ```
                 Input (MAX_LEN,)
                       |
-                Embedding (VOCAB x 100)   ← học từ đầu (model gốc)
-        ┌─────────────┼─────────────┬───────────────┐
+                Embedding (VOCAB x 100)      [học từ đầu]
+        +-------------+-------------+---------------+
      Conv1D k=3     Conv1D k=5    Conv1D k=7       LSTM(128)
      150 filters    150 filters   150 filters         |
      GMaxPool       GMaxPool      GMaxPool            (128)
-        └──────(150)──┴───(150)──────┘(150)            |
-                      └────────── Concatenate ─────────┘
+        +------(150)--+---(150)------+(150)            |
+                      +---------- Concatenate ---------+
                                    (150*3 + 128 = 578)
                                         |
                               Dense(200, sigmoid) + Dropout(0.2)
@@ -327,7 +342,7 @@ md(r"""
                                  Dense(3, softmax)
 ```
 
-Cấu hình huấn luyện theo paper: optimizer **Adamax**, loss **categorical_crossentropy**.
+Cấu hình huấn luyện theo bài báo: bộ tối ưu **Adamax**, hàm mất mát **categorical cross-entropy**.
 """)
 
 code(r"""
@@ -374,40 +389,44 @@ model_base.summary()
 # 4. Improved architecture
 # ----------------------------------------------------------------------------
 md(r"""
-## 4. Mô hình cải tiến (improved)
+## 4. Mô hình cải tiến
 
-Yêu cầu của thầy: report **cả mô hình gốc lẫn mô hình sửa đổi**. Điều quan trọng là bản cải tiến
-phải **thực sự tốt hơn**, không phải chỉ "khác đi". Vì vậy ta đã chạy một loạt **thực nghiệm có
-kiểm soát** (xem §4.1) để tìm ra thay đổi nào thật sự nâng hiệu năng một cách **ổn định** (trung
-bình qua 3 seeds), rồi mới chốt kiến trúc.
+Mục tiêu của mô hình cải tiến là đạt hiệu năng cao hơn mô hình gốc một cách có cơ sở, thay vì chỉ
+thay đổi kiến trúc một cách tuỳ ý. Để bảo đảm điều này, một loạt thực nghiệm có kiểm soát đã được
+tiến hành (trình bày ở §4.1) nhằm xác định những thay đổi thực sự nâng cao hiệu năng một cách ổn
+định, đánh giá bằng giá trị trung bình trên ba hạt giống ngẫu nhiên (random seed) khác nhau.
 
-**Hai thay đổi cốt lõi thắng cuộc** (giữ nguyên xương sống đa kênh CNN+LSTM của paper):
+Hai thay đổi cốt lõi được lựa chọn, trên cơ sở giữ nguyên cấu trúc đa kênh CNN-LSTM của bài báo,
+được tóm tắt như sau:
 
-| Thay đổi | Lý do | Tác động (đo được) |
-|----------|-------|--------------------|
-| **PhoW2V pretrained embedding (fine-tune)** | Vector từ học sẵn trên corpus 20GB thay cho embedding học từ vocab ~2.5k | Giải quyết nút thắt embedding yếu |
-| **Focal loss** (γ=2) | Tập trung học các mẫu khó / lớp hiếm (`neutral`) thay vì cross-entropy thường | Nâng F1 lớp neutral, ổn định hơn |
-| + giữ `class_weight`, SpatialDropout nhẹ, EarlyStopping | Regularize + xử lý mất cân bằng | |
+| Thay đổi | Cơ sở lý luận |
+|----------|---------------|
+| Khởi tạo embedding bằng **PhoW2V** (có tinh chỉnh) | Sử dụng vector từ tiền huấn luyện trên kho ngữ liệu 20GB nhằm khắc phục hạn chế của embedding học từ từ điển nhỏ |
+| **Focal loss** (γ = 2) | Tăng trọng số học cho các mẫu khó và lớp thiểu số (`neutral`), cải thiện điểm F1 của lớp này |
+| Duy trì `class_weight`, SpatialDropout, EarlyStopping | Điều chuẩn (regularization) và xử lý mất cân bằng lớp |
 
-> **Lưu ý quan trọng:** ta đã thử cả **BiLSTM** nhưng nó *không* giúp ích trên dữ liệu câu ngắn này
-> (thậm chí kém và rất nhiễu — xem bảng §4.1). Đây là minh chứng: cải tiến phải dựa trên **bằng chứng
-> thực nghiệm**, không phải "thêm cho phức tạp".
+Đáng chú ý, kiến trúc Bidirectional LSTM (BiLSTM) cũng đã được thử nghiệm nhưng không cải thiện
+hiệu năng trên loại dữ liệu câu ngắn này, thậm chí cho kết quả thấp hơn và kém ổn định (xem §4.1).
+Kết quả này củng cố nguyên tắc rằng việc cải tiến mô hình cần dựa trên bằng chứng thực nghiệm, thay
+vì tăng độ phức tạp một cách không cần thiết.
 """)
 
 md(r"""
-### 4.1 Bảng thực nghiệm chọn kiến trúc cải tiến
+### 4.1. Thực nghiệm lựa chọn kiến trúc cải tiến
 
-Kết quả trung bình qua **3 seeds** (42, 7, 123) trên tập test — baseline gốc ≈ acc 89.9 / macro-F1 75.7:
+Bảng dưới đây trình bày kết quả trung bình trên ba hạt giống ngẫu nhiên (42, 7, 123), đánh giá trên
+tập kiểm thử. Mô hình gốc đạt độ chính xác khoảng 89.9% và macro-F1 khoảng 75.7% để làm mốc đối chiếu.
 
 | Cấu hình | Accuracy | Macro-F1 | Neutral-F1 | Nhận xét |
 |----------|:--------:|:--------:|:----------:|----------|
-| PhoW2V **frozen** + BiLSTM | 87.24 | 70.52 | 32.54 | ❌ đóng băng emb → kém (domain lệch) |
-| PhoW2V 300d + BiLSTM + Focal | 89.65 | 74.75 ± **3.99** | 40.70 | ❌ rất nhiễu, không ổn định |
-| PhoW2V 300d + LSTM + CE | 89.09 | 76.18 ± 0.82 | 44.94 | ✅ tốt |
-| PhoW2V 300d + LSTM + Focal | 90.05 | 76.70 ± 0.97 | 45.84 | ✅ rất tốt |
-| **PhoW2V 100d + LSTM + Focal** ⭐ | **90.44** | **76.80 ± 0.37** | 45.31 | 🏆 **cao nhất + ổn định nhất + nhẹ nhất** |
+| PhoW2V (cố định) + BiLSTM | 87.24 | 70.52 | 32.54 | Cố định embedding cho kết quả kém do lệch miền dữ liệu |
+| PhoW2V 300d + BiLSTM + Focal | 89.65 | 74.75 ± 3.99 | 40.70 | Độ lệch chuẩn lớn, không ổn định |
+| PhoW2V 300d + LSTM + CE | 89.09 | 76.18 ± 0.82 | 44.94 | Tốt |
+| PhoW2V 300d + LSTM + Focal | 90.05 | 76.70 ± 0.97 | 45.84 | Rất tốt |
+| **PhoW2V 100d + LSTM + Focal** | **90.44** | **76.80 ± 0.37** | 45.31 | Macro-F1 cao nhất, độ lệch chuẩn nhỏ nhất |
 
-→ Chốt **bản cải tiến = PhoW2V 100d (fine-tune) + LSTM đa kênh + Focal loss**.
+Trên cơ sở các kết quả trên, cấu hình được lựa chọn cho mô hình cải tiến là **PhoW2V 100 chiều (có
+tinh chỉnh) kết hợp LSTM đa kênh và Focal loss**, do đạt macro-F1 cao nhất và mức độ ổn định tốt nhất.
 """)
 
 code(r"""
@@ -459,11 +478,15 @@ model_improved.summary()
 md(r"""
 ## 5. Huấn luyện
 
-Cả hai model dùng cùng dữ liệu train/dev và `class_weight` để xử lý mất cân bằng lớp.
-- **Model gốc**: theo paper — Adamax, embedding học từ đầu, loss cross-entropy.
-  (Dùng batch 32 thay vì 10 để train nhanh hơn trên CPU.)
-- **Model cải tiến**: Adamax, embedding khởi tạo **PhoW2V** (fine-tune), **focal loss**,
-  thêm `EarlyStopping` + `ReduceLROnPlateau`.
+Cả hai mô hình được huấn luyện trên cùng tập huấn luyện và tập kiểm định, đồng thời áp dụng trọng
+số lớp (`class_weight`) để xử lý mất cân bằng lớp.
+
+- **Mô hình gốc:** theo bài báo, sử dụng bộ tối ưu Adamax, lớp embedding học từ đầu và hàm mất mát
+  cross-entropy. Kích thước lô (batch size) được đặt bằng 32 thay vì 10 nhằm rút ngắn thời gian
+  huấn luyện trên CPU.
+- **Mô hình cải tiến:** sử dụng bộ tối ưu Adamax, lớp embedding khởi tạo bằng PhoW2V (có tinh
+  chỉnh), hàm mất mát Focal loss, kết hợp các kỹ thuật điều khiển huấn luyện `EarlyStopping` và
+  `ReduceLROnPlateau`.
 """)
 
 code(r"""
@@ -491,12 +514,12 @@ def train_model(model, epochs=EPOCHS, use_callbacks=False):
 """)
 
 code(r"""
-print("="*60, "\nHUẤN LUYỆN MODEL GỐC (Multi-channel LSTM-CNN)\n", "="*60)
+print("="*60, "\nHUẤN LUYỆN MÔ HÌNH GỐC (Multi-channel LSTM-CNN)\n", "="*60)
 hist_base, time_base = train_model(model_base, use_callbacks=False)
 """)
 
 code(r"""
-print("="*60, "\nHUẤN LUYỆN MODEL CẢI TIẾN (PhoW2V + LSTM-CNN + Focal loss)\n", "="*60)
+print("="*60, "\nHUẤN LUYỆN MÔ HÌNH CẢI TIẾN (PhoW2V + LSTM-CNN + Focal loss)\n", "="*60)
 hist_improved, time_improved = train_model(model_improved, epochs=15, use_callbacks=True)
 """)
 
@@ -507,10 +530,10 @@ for col, (name, h) in enumerate([("Base (LSTM-CNN)", hist_base),
                                  ("Improved (PhoW2V+Focal)", hist_improved)]):
     axes[0, col].plot(h.history["accuracy"], label="train")
     axes[0, col].plot(h.history["val_accuracy"], label="val")
-    axes[0, col].set_title(f"{name} — Accuracy"); axes[0, col].legend(); axes[0, col].grid(alpha=.3)
+    axes[0, col].set_title(f"{name}: Accuracy"); axes[0, col].legend(); axes[0, col].grid(alpha=.3)
     axes[1, col].plot(h.history["loss"], label="train")
     axes[1, col].plot(h.history["val_loss"], label="val")
-    axes[1, col].set_title(f"{name} — Loss"); axes[1, col].legend(); axes[1, col].grid(alpha=.3)
+    axes[1, col].set_title(f"{name}: Loss"); axes[1, col].legend(); axes[1, col].grid(alpha=.3)
 plt.tight_layout(); plt.show()
 """)
 
@@ -518,13 +541,14 @@ plt.tight_layout(); plt.show()
 # 6. Evaluation / Report
 # ----------------------------------------------------------------------------
 md(r"""
-## 6. Đánh giá & Report kết quả (trên tập test)
+## 6. Đánh giá và kết quả (trên tập kiểm thử)
 
-Các chỉ số:
-- **Accuracy** — tỉ lệ dự đoán đúng tổng thể.
-- **Macro-F1 / Macro-Precision / Macro-Recall** — trung bình theo lớp (không thiên vị lớp đông);
-  đây là chỉ số chính trên UIT-VSFC do dữ liệu mất cân bằng.
-- **Weighted-F1** — F1 có trọng số theo số mẫu mỗi lớp.
+Các độ đo được sử dụng để đánh giá:
+
+- **Accuracy:** tỷ lệ dự đoán đúng trên toàn bộ tập kiểm thử.
+- **Macro-Precision, Macro-Recall, Macro-F1:** giá trị trung bình theo lớp, không thiên vị lớp
+  chiếm đa số. Đây là độ đo chính trên UIT-VSFC do dữ liệu mất cân bằng.
+- **Weighted-F1:** điểm F1 có trọng số theo số lượng mẫu của mỗi lớp.
 """)
 
 code(r"""
@@ -549,7 +573,7 @@ res_improved = evaluate(model_improved, "Improved: PhoW2V + LSTM-CNN + Focal", t
 """)
 
 md(r"""
-### 6.1 Bảng tổng hợp kết quả (Base vs Improved)
+### 6.1. Bảng tổng hợp kết quả (mô hình gốc so với mô hình cải tiến)
 """)
 
 code(r"""
@@ -572,14 +596,15 @@ code(r"""
 # --- Mức cải thiện của Improved so với Base ---
 delta_acc = (res_improved["Accuracy"] - res_base["Accuracy"]) * 100
 delta_f1  = (res_improved["Macro-F1"] - res_base["Macro-F1"]) * 100
-print(f"Cải thiện của model Improved so với Base:")
-print(f"  Accuracy : {delta_acc:+.2f} điểm %")
-print(f"  Macro-F1 : {delta_f1:+.2f} điểm %")
-print("  -> Cải tiến" + (" THỰC SỰ tốt hơn ✅" if delta_f1 > 0 and delta_acc > 0 else " cần xem lại"))
+print("Mức chênh lệch của mô hình cải tiến so với mô hình gốc:")
+print(f"  Accuracy : {delta_acc:+.2f} điểm phần trăm")
+print(f"  Macro-F1 : {delta_f1:+.2f} điểm phần trăm")
+print("  Kết luận: " + ("mô hình cải tiến đạt hiệu năng cao hơn trên cả hai độ đo."
+                        if delta_f1 > 0 and delta_acc > 0 else "cần xem xét lại."))
 """)
 
 md(r"""
-### 6.2 Báo cáo chi tiết theo từng lớp (per-class)
+### 6.2. Kết quả chi tiết theo từng lớp
 """)
 
 code(r"""
@@ -609,7 +634,7 @@ plt.tight_layout(); plt.show()
 md(r"""
 ## 7. Nhận xét & Kết luận
 
-*(Số liệu chi tiết xem bảng §6.1 ngay phía trên — phần này được cập nhật theo kết quả thực tế.)*
+*(Phần này được cập nhật tự động theo kết quả thực tế sau khi huấn luyện.)*
 """)
 
 nb["cells"] = cells
